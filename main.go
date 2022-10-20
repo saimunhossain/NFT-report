@@ -1,28 +1,59 @@
 package main
+
 import (
 	"context"
+	"crypto/ecdsa"
 	"fmt"
 	"log"
-	"github.com/ethereum/go-ethereum/common"
+	"math/big"
+
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"strings"
 )
 
 func main() {
-	conn, err := ethclient.Dial("https://mainnet.infura.io/v3/2468f3c54a7b498284b55d91676c0913")
-
+	client, err := ethclient.Dial("https://mainnet.infura.io/v3/2468f3c54a7b498284b55d91676c0913")
 	if err != nil {
-		log.Fatal("Failed to connect to Eth Node", err)
+		log.Fatal(err)
 	}
 
-	cntxt := context.Background()
-
-	txn, pending, _ := conn.TransactionByHash(cntxt, common.HexToHash("0x031140df5a9550adfa9be3fd4b71433ccbabbc6c301040ecdd17964faf185555"))
-
-	if pending {
-		fmt.Println("Transaction is pending", txn)
-	} else {
-		fmt.Println("Transaction is not pending", txn)
+	privateKey, err := crypto.HexToECDSA("...")
+	if err != nil {
+		log.Fatal(err)
 	}
 
+	publicKey := privateKey.Public()
+	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
+	if !ok {
+		log.Fatal("error casting public key to ECDSA")
+	}
+
+	fromAddress := crypto.PubkeyToAddress(*publicKeyECDSA)
+	nonce, err := client.PendingNonceAt(context.Background(), fromAddress)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	gasPrice, err := client.SuggestGasPrice(context.Background())
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	auth := bind.NewKeyedTransactor(privateKey)
+	auth.Nonce = big.NewInt(int64(nonce))
+	auth.Value = big.NewInt(0)     // in wei
+	auth.GasLimit = uint64(300000) // in units
+	auth.GasPrice = gasPrice
+
+	input := "1.0"
+	address, tx, instance, err := DeployStore(auth, client, input)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println(address.Hex())
+	fmt.Println(tx.Hash().Hex())
+
+	_ = instance
 }
